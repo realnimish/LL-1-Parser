@@ -14,6 +14,7 @@ unordered_map<string,token> TOKENS;
 vector< vector< vector<token> > > PRODUCTIONS;
 vector< set<token> > FIRST,FOLLOW;
 vector< vector<int> > PARSETABLE;
+vector<int> NULLABLE;
 
 string getToken(token);
 
@@ -94,54 +95,69 @@ void removeLeftRecursion()
 	}
 }
 
-void findFIRST()
+int _add(int i,int j,const token &tok)
+{
+	if(FIRST[i].insert(tok).second==true)
+	{
+		if(PARSETABLE[i][tok.id]!=-1) return -1;
+		PARSETABLE[i][tok.id] = j;
+		return 1;
+	}
+	return 0;
+}
+
+
+int findFIRST()
 {
 	FIRST.resize(PRODUCTIONS.size());
-	bool change;
+	NULLABLE.resize(PRODUCTIONS.size(),-1);
+	PARSETABLE.resize(NONTERMINALS_COUNT, vector<int>(TERMINALS_COUNT,-1));
+	int change;
 
 	do{
-		change = false;
-		int i=0;
-		for(auto &prod : PRODUCTIONS)
+		change = 0;
+		for(int i=0; i<PRODUCTIONS.size(); ++i)
 		{
-			for(auto &lhs : prod)
+			for(int j=0; j<PRODUCTIONS[i].size(); ++j)
 			{
-				bool eps = true;
-				for(auto &tok : lhs)
+				bool eps = false;
+				for(auto &tok : PRODUCTIONS[i][j])
 				{
-					if(tok==EPSILON) continue;
+					if(tok==EPSILON)
+						{
+							eps=true;
+							continue;
+						}
 					if(tok.type==TER)
 					{
-						int sz = FIRST[i].size();
-						FIRST[i].insert(tok);
-						if(FIRST[i].size()!=sz) change = true;
-						eps=0; break;
+						int res = _add(i,j,tok);
+						if(res<0) return 0;
+						change |= res;
+						eps=false;
 					}
 					else
 					{
-						int sz = FIRST[i].size();
 						// Add First(NTER) to FIRST(i)
-						FIRST[i].insert(FIRST[tok.id].begin(),FIRST[tok.id].end());
-
-						FIRST[i].erase(EPSILON);
-
-						if(FIRST[i].size()!=sz) change = true;
-
-						if(FIRST[tok.id].find(EPSILON) == FIRST[tok.id].end())
+						for(auto &tok1 : FIRST[tok.id])
 						{
-							eps=0; break;
+							if(tok1==EPSILON) eps=true;
+							else{
+								int res = _add(i,j,tok1);
+								if(res<0) return 0;
+								change |= res;
+							}
 						}
 					}
-
+					if(!eps) break;
 				}
-				int sz = FIRST[i].size();
-				if(eps) FIRST[i].insert(EPSILON);
-				if(FIRST[i].size()!=sz) change = true;
+				if(eps){
+					change |= FIRST[i].insert(EPSILON).second;
+					NULLABLE[i] = j;
+				}
 			}
-			++i;
 		}
-
 	}while(change);
+	return 1;
 }
 
 void findFOLLOW()
@@ -187,9 +203,21 @@ void findFOLLOW()
 	}while(change);
 }
 
-void findPARSETABLE()
+int findPARSETABLE()
 {
+	if(findFIRST()==0) return 0;
+	findFOLLOW();
 
+	for(int i=0; i<PRODUCTIONS.size(); ++i)
+	{
+		if(NULLABLE[i]<0) continue;
+		for(auto &tok : FOLLOW[i])
+		{
+			if(PARSETABLE[i][tok.id]!=-1) return 0;
+			PARSETABLE[i][tok.id] = NULLABLE[i];
+		}
+	}
+	return 1;
 }
 
 /* NIMISH END */
@@ -256,36 +284,6 @@ void readRules(fstream &file)
     }
 }
 
-void  displayTokens()
-{
-    cout<<"token | id | type\n\n";
-    for(auto i=TOKENS.begin();i!=TOKENS.end();i++)
-    {
-        cout<<i->first<<" "<<i->second.id<<" "<<i->second.type<<endl;
-    }
-}
-
-void displayProductions()
-{
-    cout<<"Prod Rules:\n\n";
-    for(int i=0;i<PRODUCTIONS.size();i++)
-    {   
-        // cout<<"Prod "<<i<<":"<<PRODUCTIONS[i].size()<<"\n";
-        for(int j=0;j<PRODUCTIONS[i].size();j++)
-        {
-            // cout<<"RULE "<<j<<" : ";
-            cout << getToken({i,0}) << " : ";
-            for(int k=0;k<PRODUCTIONS[i][j].size();k++)
-            {
-                // cout<<"{"<<PRODUCTIONS[i][j][k].id<<","<<PRODUCTIONS[i][j][k].type<<"} , ";
-                cout << getToken(PRODUCTIONS[i][j][k]) << " ";
-            }
-            cout<<"\n";
-        }
-        cout<<endl;
-    }
-}
-
 void getProductions()
 {
     string input,filename="rules.txt";
@@ -326,45 +324,39 @@ void readTokenizedInput()
     INPUT.push_back(tmp);
 }
 
-void parseInput()
+int parseInput()
 {
     stack<token> Stack;
 
-    Stack.push(TOKENS.find("$")->second);
-    Stack.push(TOKENS.find(START)->second);
+    Stack.push(TOKENS["$"]);
+    Stack.push(TOKENS[START]);
+
     for(int i=0;i<INPUT.size();i++)
     {
-        auto x = TOKENS.find(INPUT[i].first);
-        if(Stack.empty())
+        token x = TOKENS[INPUT[i].first];
+
+        if(Stack.empty()) return 0;
+        while(!(x == Stack.top()))
         {
-            cout<<"UNKNOWN ERROR\n";
-            return;
-        }
-        while(x->second.id != Stack.top().id || x->second.type != Stack.top().type)
-        {
-            //To be decieded
-            vector<token> matchedRule;
-            if(PARSETABLE[Stack.top().id][x->second.id]!=-1)
-            {   vector<token> matchedRule = PRODUCTIONS[Stack.top().id][PARSETABLE[Stack.top().id][x->second.id]];
+            if(Stack.top()==EPSILON) {
+            	Stack.pop();
+            	continue;
+            }
+
+            if(Stack.top().type==TER) return 0;
+
+            if(PARSETABLE[Stack.top().id][x.id]!=-1)
+            {   vector<token> matchedRule = PRODUCTIONS[Stack.top().id][PARSETABLE[Stack.top().id][x.id]];
                 Stack.pop();
                 for(int i=matchedRule.size()-1;i>=0;i--)
                     Stack.push(matchedRule[i]); 
             }
-            else{
-                cout<<"REJECTED\n";
-                return;
-            }
+            else return 0;
         }
         Stack.pop();
 
     }
-    if(Stack.empty())
-    {
-        cout<<"Accepted\n";
-    }
-    else{
-        cout<<"Rejected\n";
-    }
+    return Stack.empty();
 }
 
 string getToken(token tkn)
@@ -380,9 +372,39 @@ string getToken(token tkn)
     return "";
 }
 
+void displayTokens()
+{
+    cout<<"token | id | type\n\n";
+    for(auto i=TOKENS.begin();i!=TOKENS.end();i++)
+    {
+        cout<<i->first<<" "<<i->second.id<<" "<<i->second.type<<endl;
+    }
+}
+
+void displayProductions()
+{
+    cout<<"\nProd Rules:\n\n";
+    for(int i=0;i<PRODUCTIONS.size();i++)
+    {   
+        // cout<<"Prod "<<i<<":"<<PRODUCTIONS[i].size()<<"\n";
+        for(int j=0;j<PRODUCTIONS[i].size();j++)
+        {
+            // cout<<"RULE "<<j<<" : ";
+            cout << getToken({i,0}) << " : ";
+            for(int k=0;k<PRODUCTIONS[i][j].size();k++)
+            {
+                // cout<<"{"<<PRODUCTIONS[i][j][k].id<<","<<PRODUCTIONS[i][j][k].type<<"} , ";
+                cout << getToken(PRODUCTIONS[i][j][k]) << " ";
+            }
+            cout<<"\n";
+        }
+        cout<<endl;
+    }
+}
+
 void displayFIR_FOL(vector<set<token>> &T, string name)
 {
-	cout << name << ":\n\n";
+	cout << endl << name << ":\n\n";
     int i=0;
     for(auto &itr: T)
     {   cout<<getToken({i,0})<<" : ";
@@ -395,6 +417,59 @@ void displayFIR_FOL(vector<set<token>> &T, string name)
     }
 }
 
+void printSpace(int x)
+{
+    while(x--)
+        cout<<" ";
+}
+
+void displayParseTable()
+{
+	cout << endl << "Parse Table:\n\n";
+
+    int nos=5;
+    string p;
+    printSpace(nos);
+    for(int i=1;i<TERMINALS_COUNT;i++)
+    {    
+        p=getToken({i,1});
+        cout<< p; printSpace(nos-p.length());
+    }
+    cout<<endl<<endl;
+    for(int i=0;i<PARSETABLE.size();i++)
+    {   
+        p=getToken({i,0});
+        cout<<p;printSpace(nos-p.length());
+        for(int j=1;j<PARSETABLE[i].size();j++)
+        {
+            int s=0;
+            for(int k=0;PARSETABLE[i][j]>=0 && k<PRODUCTIONS[i][PARSETABLE[i][j]].size();k++)
+            {
+                p=getToken(PRODUCTIONS[i][PARSETABLE[i][j]][k]);
+                cout<<p;
+                s+=p.length();
+
+            }
+            if(s==0)
+            {
+            	cout << "_";
+            	s++;
+            }
+            printSpace(nos-s);
+        }
+        cout<<endl<<endl;
+    }
+}
+
+void displayInput()
+{
+    for(int i=0;i<INPUT.size();i++)
+    {
+        cout<<"Token: "<<INPUT[i].first<<" Value: "<<INPUT[i].second<<endl;
+    }
+}
+
+
 /* SAYAN END */
 
 int main()
@@ -402,12 +477,16 @@ int main()
 	getProductions();
 	removeLeftRecursion();
 	displayProductions();
-	findFIRST();
+	if(findPARSETABLE()==0)
+	{
+		cout << "Ambiguous Grammar!!\n";
+		return 0;
+	}
+
 	displayFIR_FOL(FIRST,"FIRST");
-	findFOLLOW();
 	displayFIR_FOL(FOLLOW,"FOLLOW");
-	// findPARSETABLE();
-	// readTokenizedInput();
-	// parseInput();
+	displayParseTable();
+	readTokenizedInput();
+	cout << (parseInput()?"ACCEPTED":"REJECTED") << endl;
 	return 0;
 }
