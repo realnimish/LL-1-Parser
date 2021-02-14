@@ -9,7 +9,7 @@
 [0-9]+      {
                 FILE *fptr = fopen("input.txt", "a");
                 fprintf(fptr,"%s %s\n","num",yytext);
-                 fclose(fptr);
+                fclose(fptr);
             }
 [(+\-*/)]    {
                 FILE *fptr = fopen("input.txt", "a");
@@ -28,5 +28,8 @@
 
 %%
 void main(){
+    FILE *fptr = fopen("input.txt", "w");
+    if(fptr==NULL)
+        fptr = fopen("scores.dat", "wb");
     yylex();
 }
