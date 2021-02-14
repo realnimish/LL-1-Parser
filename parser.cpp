@@ -5,12 +5,16 @@ using namespace std;
 #define NTER 1
 
 struct token{
-	int type;
 	int id;
+	bool type;
 };
 
+string START;
+
+unordered_map<string,token> TOKENS;
 vector< vector< vector<token> > > PRODUCTIONS;
-vector< set<token> > FIRST;
+vector< set<token> > FIRST,FOLLOW;
+vector< vector<int> > PARSETABLE;
 
 // START
 
@@ -110,7 +114,9 @@ void findFIRST()
 					{
 						int sz = FIRST[i].size();
 						// Add First(NTER) to FIRST(i)
+						FIRST[i].insert(FIRST[tok.id].begin(),FIRST[tok.id].end());
 
+						FIRST[i].erase(EPSILON);
 
 						if(FIRST[i].size()!=sz) change = true;
 
@@ -121,9 +127,52 @@ void findFIRST()
 					}
 
 				}
-				if(eps) FIRST[i].insert(EPSILON);
+				if(eps) FIRST[i].insert(EPSILON), change = true;
 			}
 			++i;
+		}
+
+	}while(change);
+}
+
+void findFOLLOW()
+{
+	const token dollar{TOKENS["$"].id,TER};
+
+	FOLLOW.resize(PRODUCTIONS.size());
+	FOLLOW[TOKENS[START].id].insert(dollar);
+
+	bool change;
+	do{
+		change = false;
+
+		for(int i=0; i<PRODUCTIONS.size(); ++i)
+		{
+			for(auto &lhs : PRODUCTIONS[i])
+			{
+				if(lhs.back().type==NTER)
+				{
+					FOLLOW[lhs.back().id].insert(FOLLOW[i].begin(), FOLLOW[i].end());
+				}
+
+				for(int j=lhs.size()-2; j>=0; --j)
+				{
+					if(lhs[j].type==TER) continue;
+					int sz = FOLLOW[lhs[j].id].size();
+
+					if(lhs[j+1].type==TER) FOLLOW[lhs[j].id].insert(lhs[j+1]);
+					else{
+						FOLLOW[lhs[j].id].insert(FIRST[lhs[j+1].id].begin(), FIRST[lhs[j+1].id].end());
+
+						if(FOLLOW[lhs[j].id].find(EPSILON)!=FOLLOW[lhs[j].id].end())
+						{
+							FOLLOW[lhs[j].id].insert(FOLLOW[lhs[j+1].id].begin(), FOLLOW[lhs[j+1].id].end());
+						}
+					}
+					FOLLOW[lhs[j].id].erase(EPSILON);
+					if(FOLLOW[lhs[j].id].size() != sz) change = true;
+				}
+			}
 		}
 
 	}while(change);
