@@ -3,7 +3,7 @@
 %}
 %%
 
-[A-Za-z_][A-Za-z0-9_]*   {
+[A-Za-z][A-Za-z0-9_]*   {
                 FILE *fptr = fopen("input.txt", "a");
                 // printf("word: %s\n",yytext);
                 fprintf(fptr,"%s %s\n","id",yytext);
