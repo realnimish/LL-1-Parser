@@ -99,10 +99,10 @@ int _add(int i,int j,const token &tok)
 {
 	if(FIRST[i].insert(tok).second==true)
 	{
-		if(PARSETABLE[i][tok.id]!=-1) return -1;
 		PARSETABLE[i][tok.id] = j;
 		return 1;
 	}
+    else if(PARSETABLE[i][tok.id]!=j) return -1;
 	return 0;
 }
 
